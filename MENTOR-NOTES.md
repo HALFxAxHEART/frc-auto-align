@@ -31,12 +31,25 @@ Hephaestus's own code if the robot needs to shoot again.
 
 | **Not yet tested** | Why / how to test |
 |---|---|
-| Anything on the **real robot** | Follow the guide's section 10 step by step, slow speeds first |
+| Anything on the **real robot** | Follow the guide's section 11 step by step, slow speeds first |
 | Stick override, stuck check | Simulation can't push a stick mid-run or put a wall in the way. Test on the robot (guide step 6) |
 | Back-button mapping on the 8BitDo | Set up in 8BitDo Ultimate Software; verify in the DS USB tab (buttons 9 and 10) |
 | Trench clearance on the real robot | Sim margin is 7-17 cm. Real pose error eats into that: first trench runs at low speed, someone watching |
 | Depot coordinates | From 6328's field measurements, not our half field. Measure yours |
 | Pose accuracy on **your half field** | See the next section; this is the most likely thing to need work |
+
+## The navigation grid (PathPlanner)
+
+The team edits the obstacle map in **PathPlanner** (guide section 8 has screenshots of every step). The 10 cm grid in
+the repo was set up once from team 6328's published field measurements: hub, bumps and trench frames padded by half
+the robot + 5 cm, trench lanes left open. That fine grid matters: PathPlanner's default 30 cm grid let a simulated
+robot clip the trench frame.
+
+- Clicks save immediately, with no undo inside PathPlanner. Git is the undo: *Discard Changes* on `navgrid.json`.
+- *Edit Grid → Confirm / Restore Default* wipes it (PathPlanner warns). Same fix.
+- PathPlanner's Telemetry page doesn't draw the grid, so students compare the two views side by side.
+- The guide's screenshots were taken with the real PathPlanner 2026.1.2 Linux build on this project, and the
+  Telemetry shot is the real robot code running in simulation.
 
 ## The half field: the one thing that will bite you
 
@@ -62,9 +75,9 @@ relative to each other, or the robot's position and the targets won't agree.
 |---|---|---|---|
 | 1 | Where am I? Field coordinates and pose | 1-3 | Put the robot at taped spots, compare the AdvantageScope pose with a tape measure. Challenge 1 on paper. |
 | 2 | Targets from tags (transforms) | 4 | Challenges 1 (check in sim), 2 and 3 |
-| 3 | Pathfinding and obstacles | 5 (stage 1), 6 | Sim. Challenges 6 and 8. Discuss challenge 7. |
-| 4 | P controllers and tuning | 5 (stage 2), 11 | Sim: challenge 5 with a graph on screen. Then the robot, guide section 10, slow speeds. |
-| 5 | Next year | 12 | Challenge 4 (reef-style left/right). Plan what to build once the 2027 game is out. |
+| 3 | Pathfinding and obstacles | 5 (stage 1), 6, 8 | Everyone opens PathPlanner and follows section 8 (navgrid, settings, Telemetry). Challenges 6 and 9. Discuss challenge 7. |
+| 4 | P controllers and tuning | 5 (stage 2), 12 | Sim: challenge 5 with a graph on screen. Then the robot, guide section 11, slow speeds. |
+| 5 | Next year | 13 | Challenge 4 (reef-style left/right). Plan what to build once the 2027 game is out. |
 
 Tips:
 - Have students predict before they run. "Where will it stop?" "Which face will it pick?" Then run it.
@@ -97,7 +110,7 @@ Tips:
    about ln(0.75/0.03) ≈ 3.2 s, which is *longer than the 3 s timeout*, so it gives up. (Great lesson: the parts interact.)
    kP = 10: it hits the 1.5 m/s cap until ~15 cm out, then brakes hard. In sim it's fine. On a real robot, delays
    (motors, sensor lag) make high kP overshoot and wiggle.
-6. **Fake obstacle.** The path goes around the new blocked area. If it's blocking the only way, there's no path and the
+6. **Fake obstacle.** The path goes around the new blocked area (the guide's Telemetry screenshot is exactly this). If it's blocking the only way, there's no path and the
    robot won't move. Discuss what the driver sees then (`Align/State` stays on Pathfinding: a good improvement project
    is a timeout for stage 1 too).
 7. **Avoiding robots.** You'd need to *detect* robots: a camera running an object-detection model trained on bumpers

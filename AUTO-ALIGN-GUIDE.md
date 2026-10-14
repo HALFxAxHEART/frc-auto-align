@@ -169,8 +169,8 @@ where the robot's **center** may go. PathPlanner searches
 for the shortest route through open squares (with a version of the **A\*** "A-star" search algorithm), smooths it into a curve, and
 follows it. Blocked squares are drawn bigger than the real objects so our bumpers clear them.
 
-**Our navgrid** is made by a script, `docs/tools/make_navgrid.py`, from PathPlanner's default 2026 grid plus exact
-field measurements around the hub:
+**Our navgrid** uses 10 cm squares, set up from the official field measurements around the hub. You look at it and
+change it in the PathPlanner app (step by step with screenshots in section 8):
 - **Trenches are open.** Our robot fits under them, so there's a lane through each. The center has to stay half a
   robot + 5 cm away from the trench frame and the wall, which leaves a lane about 20 cm wide.
 - **Bumps are blocked.** The robot *can* drive over them, but auto-align shouldn't: it would bounce at full speed,
@@ -179,9 +179,8 @@ field measurements around the hub:
 - PathPlanner's default grid uses 30 cm squares. That's too coarse for the trench: a robot could be anywhere in a
   30 cm square and still be "allowed", which in sim put it 4 cm into the trench frame. 10 cm squares fixed it.
 
-To change what's blocked: edit `make_navgrid.py` and run it (`python docs/tools/make_navgrid.py`), or use the
-PathPlanner app's **Navigation Grid** editor. (Running the script again replaces hand edits.) Deploy, and the robot
-uses the new grid.
+To change what's blocked: PathPlanner app → **Navigation Grid** → click or drag squares (section 8). Deploy, and the
+robot uses the new grid.
 
 **Why not pathfind all the way to the final spot?** Look at the picture: the final pose is *inside* the shaded area
 around the hub (we want to be right up against it!). The pathfinder won't go into blocked squares. Also, a pathfinder
@@ -266,8 +265,7 @@ Because it can't see robots, **the driver is always the safety system**, backed 
 | `commands/AutoAlign.java` | The plan: check → pick closest → work out poses → stage 1 + stage 2 → safety checks → buzz. |
 | `commands/DriveToPose.java` | Stage 2: the P controller that drives straight to an exact pose. |
 | `RobotContainer.java` | Binds the stick clicks (paddles), the stick-override check, and the controller buzz. |
-| `deploy/pathplanner/navgrid.json` | The obstacle map (made by `docs/tools/make_navgrid.py`). |
-| `docs/tools/make_navgrid.py` | Builds the navgrid: trenches open, bumps blocked, 10 cm squares. |
+| `deploy/pathplanner/navgrid.json` | The obstacle map: 10 cm squares, trenches open, bumps blocked. Edit it in PathPlanner (section 8). |
 
 **Dashboard (Elastic / AdvantageScope):**
 - `Align/State`: Idle, Turning to final heading, Pathfinding, Final approach, Arrived, Cancelled, Gave up / Can't align + *why*
@@ -278,7 +276,69 @@ Because it can't see robots, **the driver is always the safety system**, backed 
 
 ---
 
-## 8. Set up the paddles
+## 8. PathPlanner: setup and the obstacle map, step by step
+
+Every screenshot here is the real PathPlanner app (v2026.1.2) on this project. Install PathPlanner from the
+[PathPlanner releases page](https://github.com/mjansen4857/pathplanner/releases) or the Microsoft Store.
+
+**Step 1: open the project.** The first time, PathPlanner asks for a robot project. Pick this repo's folder (the one
+with `build.gradle` in it). It finds `src/main/deploy/pathplanner/` by itself.
+
+![PathPlanner welcome screen with the Open Robot Project button](docs/images/pathplanner/00-open-project.png)
+
+**Step 2: open the Navigation Grid.** Click the ☰ menu (top left) → **Navigation Grid**. (*Project Browser* is where
+you draw autos; *Telemetry* shows the robot live, step 9.)
+
+![PathPlanner menu with Navigation Grid highlighted](docs/images/pathplanner/01-menu.png)
+
+**Step 3: read the grid.** Red squares are **blocked**. Remember, each square is about the robot's **center**, so the red
+area is bigger than the real objects: half a robot + 5 cm bigger. Blue alliance is on the left.
+
+![The whole navigation grid](docs/images/pathplanner/02-navgrid-full.png)
+
+**Step 4: zoom in** with the mouse wheel. Around our hub you can see the hub + bumps (blocked) and the two
+**trench lanes**: a strip two squares (20 cm) wide where the robot's center fits under each trench.
+
+![Zoomed in on the blue hub: the trench lanes are open, the hub and bumps are blocked](docs/images/pathplanner/03-navgrid-trench.png)
+
+**Step 5: change one square.** Click it: open → blocked (red), or blocked → open. **There's no save button:** every click
+is saved to `navgrid.json` immediately. Changed your mind? Click it again. (Git also shows the change, so nothing is
+lost: VS Code → Source Control → right-click `navgrid.json` → *Discard Changes* puts ours back.)
+
+![One clicked square turns red](docs/images/pathplanner/04-click-one-square.png)
+
+**Step 6: paint a lot of squares.** Click and drag. Here we painted a cart that sits on our shop floor, so the robot
+plans around it. If your drag **starts on a red square, it erases** instead: that's how you clear an area.
+
+![A painted block of red squares](docs/images/pathplanner/05-paint-obstacle.png)
+
+**Step 7: don't press these.** The **Edit Grid** button opens this box. *Confirm* replaces the grid with a **blank**
+one, and *Restore Default* puts back PathPlanner's coarse 30 cm grid (too coarse for the trench, section 5). PathPlanner
+itself warns it can't be undone. If it happens: *Discard Changes* in VS Code, as in step 5.
+
+![Edit Grid dialog: leave it alone](docs/images/pathplanner/06-edit-grid-warning.png)
+
+**Step 8: check the robot settings.** ☰ → **Settings** → *Robot Config*. These describe the real robot and the robot
+code reads them (`RobotConfig.fromGUISettings()`) to follow paths well. The **bumper width/length (0.9 m)** must
+match `kRobotHalfLengthM` × 2 in `Constants.java`. Then *App Settings*: set the **roboRIO IP to `10.50.90.2`** (our
+team number), or Telemetry won't find our robot.
+
+![Robot Config: mass and bumper size](docs/images/pathplanner/07-robot-config.png)
+
+![App Settings: roboRIO IP for team 5090](docs/images/pathplanner/08-app-settings.png)
+
+**Step 9: watch it live.** ☰ → **Telemetry**. With the simulator running (section 10) choose **Simulator**; plugged
+into the robot, choose **Robot**. Hold the paddle and you see the path PathPlanner planned and the robot following it.
+Here the robot started below the painted cart from step 6, and drove **around** it to the hub.
+
+![PathPlanner Telemetry: the robot drives around the painted cart](docs/images/pathplanner/09-telemetry-avoids-obstacle.png)
+
+**Step 10: get it onto the robot.** The grid is a file in the `deploy` folder, so a change only reaches the robot when
+you **deploy the code** (or restart the simulator). Then commit it in git like any other change.
+
+---
+
+## 9. Set up the paddles
 
 Our controller is the **8BitDo Ultimate Wired Controller for Xbox**. It has two back buttons (8BitDo calls them
 **P1** and **P2**). They are **not buttons the robot can see**: the controller has the same 10 buttons as a normal Xbox
@@ -291,8 +351,9 @@ controller, and a back button just **copies** one of them. So we tell the contro
 
 **Setting up the 8BitDo:**
 1. On the driver station laptop, install **8BitDo Ultimate Software** (free, Microsoft Store). Plug in the controller.
-2. Open the button mapping screen and set: **left back button → LSB** (left stick button) and
-   **right back button → RSB** (right stick button). The app shows which back button is P1 and which is P2.
+2. Open the button mapping screen and set: **left back button → LSB** and **right back button → RSB**.
+   LSB/RSB = "left/right stick button" = **pressing the stick straight in** (also called a stick click, L3/R3).
+   That's all a back button does: copy another button. The app shows which back button is P1 and which is P2.
 3. Save it to the controller. The mapping lives in a **profile on the controller**, so it works on any laptop,
    but only while that profile is switched on: the **Profile** button on the controller turns it on and off
    (its light shows which). If the back buttons suddenly do nothing, someone switched the profile off.
@@ -312,12 +373,13 @@ while driving, the stick is moving, so AutoAlign quietly does nothing.
 
 ---
 
-## 9. Try it in simulation (do this first!)
+## 10. Try it in simulation (do this first!)
 
 1. Plug an Xbox controller into your laptop.
 2. VS Code: `Ctrl+Shift+P` → **WPILib: Simulate Robot Code** → *Sim GUI*.
 3. In the Sim GUI: drag your controller into **Joystick 0**. Set **Alliance Station** to Blue 1. Click **Teleoperated**.
-4. Open AdvantageScope → connect to the simulator → 2D field, add the poses listed in section 7.
+4. Open PathPlanner → ☰ → **Telemetry** → **Simulator** (section 8, step 9). For more detail, AdvantageScope →
+   connect to the simulator → 2D field, add the poses listed in section 7.
 5. Drive somewhere, then **hold the right stick click**. Watch the planned path appear and the robot follow it.
 6. Try the left stick click. Try moving a stick halfway (it should cancel). Try from behind the hub.
 
@@ -325,7 +387,7 @@ Simulation has no camera, so the "has it seen a tag" check is skipped there. Eve
 
 ---
 
-## 10. Try it on the robot (half field)
+## 11. Try it on the robot (half field)
 
 **Before you start:**
 - The Limelight's **field map** must be the 2026 one, and the same version as `kFieldLayout` in Constants (welded or AndyMark).
@@ -348,7 +410,7 @@ Simulation has no camera, so the "has it seen a tag" check is skipped there. Eve
 
 ---
 
-## 11. Tuning: symptom → fix
+## 12. Tuning: symptom → fix
 
 | What you see | Likely cause | Change |
 |---|---|---|
@@ -358,8 +420,8 @@ Simulation has no camera, so the "has it seen a tag" check is skipped there. Eve
 | Creeps the last few cm very slowly | P too low | Raise `kFinalTranslationP` (try 4) |
 | Overshoots and wiggles back | P too high or too fast | Lower `kFinalTranslationP` or `kFinalMaxSpeed` |
 | Never says "Arrived" | Tolerance tighter than the robot can do | Loosen `kPositionToleranceM` / `kHeadingToleranceDeg` |
-| Path cuts too close to something | Navgrid doesn't block enough | Raise `MARGIN` in `make_navgrid.py` (or block squares in the PathPlanner app) |
-| Scrapes the trench | Pose is off, or the margin is too small | Check vision first, then raise `MARGIN` (the lane gets narrower) |
+| Path cuts too close to something | Navgrid doesn't block enough | PathPlanner → Navigation Grid: paint more squares around it (section 8) |
+| Scrapes the trench | Pose is off, or the lane is too wide | Check vision first. Then in PathPlanner make the lane narrower: block the lane square nearest the frame |
 | Depot spot is off | The coordinates, or the pose | Measure the real depot; change the numbers in `kBlueDepot` |
 | "Gave up: stuck" with nothing in the way | Stuck check too sensitive | Raise `kStallSeconds` |
 
@@ -367,24 +429,26 @@ Change **one** thing at a time, and write down what you changed and what happene
 
 ---
 
-## 12. Next year: point it at the new game
+## 13. Next year: point it at the new game
 
 1. `kFieldLayout` → the 2027 field (WPILib adds it in the 2027 release). Load the same map on the Limelight.
 2. Replace `kHub` / `kOutpost` / `kDepot` with the new game's spots: `atTag` (tag ID + side offset) where there's a
    tag, `atPosition` (x, y, heading) where there isn't. A scoring spot left and right of a tag (like 2025's reef
    poles) = two `atTag` spots with side offsets of `+x` and `-x`.
-3. New navgrid: start from PathPlanner's default grid for the new game, and update `make_navgrid.py` with the new
-   field elements (or edit in the PathPlanner app). Check what the robot can drive under or over.
+3. New navgrid, in PathPlanner: *Edit Grid → Restore Default* loads PathPlanner's grid for the new game (30 cm squares).
+   Check what our robot can drive under or over and paint/erase to match. If it has to fit through a tight gap (like
+   this year's trench), set *Node Size* to 0.1 (that gives a blank grid) and paint the field elements, each padded by
+   half the robot + a few cm.
 4. Check `onRedSide`: 2026's field is turned 180° for red. Some years (2024) it's a mirror image instead.
 5. `kFaceTargetWithFront`: which side of the new robot scores?
-6. `kRobotHalfLengthM`: the new robot's size with bumpers (and `HALF_ROBOT` in `make_navgrid.py`).
+6. `kRobotHalfLengthM`: the new robot's size with bumpers (and the bumper size in PathPlanner's Robot Config).
 7. Bind each group to a button in `RobotContainer`.
 
 That's it: AutoAlign and DriveToPose don't change.
 
 ---
 
-## 13. Challenges
+## 14. Challenges
 
 Do these in simulation. Answers are in MENTOR-NOTES.md, but try first!
 
@@ -393,7 +457,7 @@ Do these in simulation. Answers are in MENTOR-NOTES.md, but try first!
 3. **New button:** add a **tower** target (blue tags 31 + 32, red tags 15 + 16) on the **B** button. Look up the tower's real size first. What goes wrong if you use the same 10 cm gap as the hub?
 4. **Reef-style:** make the hub button pick a spot 0.3 m to the *left* of center and a new button for 0.3 m to the *right*.
 5. **Feel the P:** set `kFinalTranslationP` to 1, then 10. Graph `Align/Distance left (m)`. What changes, and why?
-6. **Fake obstacle:** in the navgrid editor, block a 1 m square in the middle of the alliance zone. Run the sim from the other side. Does the path go around it?
+6. **Fake obstacle:** in PathPlanner's Navigation Grid, paint a 1 m block in the middle of our alliance zone (section 8, step 6). Run the sim from the other side and watch Telemetry. Does the path go around it? Then put the grid back (Discard Changes).
 7. **Think:** how could the robot avoid *other robots*? What sensor would you need, and where would you put its output in the code?
 8. **Coordinates:** add a spot by X/Y: our favorite shooting spot, 2.5 m straight out from the middle of our wall, facing the hub. What heading? Does `onRedSide` give the right red spot?
 9. **Think:** why do we skip stage 1 when we're within 1 m and lined up? What could go wrong if we didn't? And why does it also check that we're *lined up*, not just close?
