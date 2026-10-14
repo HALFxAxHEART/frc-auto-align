@@ -112,11 +112,6 @@ tagPose.toPose2d().transformBy(new Transform2d(outM, -sideOffsetM, Rotation2d.k1
 `transformBy` means "starting from this pose, move this much in *its own* directions". That's why it works for a tag
 facing any way, on either alliance, with no if-statements.
 
-**Groups and "closest":** the hub button has *two* possible targets (the hub face toward our wall, tag 26, and the face
-toward the middle, tag 20). When you press the button, the code picks whichever is closer. The other two faces are
-blocked by the bumps. Each alliance has its own list, so on red the same button goes to the red hub (tags 10 and 4).
-This is how 2025 teams picked the nearest reef face.
-
 ### Way 2: from X/Y coordinates
 
 The depot has no tag on it. So we give the spot directly, in field coordinates (section 3): where the robot's
