@@ -8,6 +8,7 @@ import com.pathplanner.lib.config.ModuleConfig;
 import com.pathplanner.lib.config.PIDConstants;
 import com.pathplanner.lib.config.RobotConfig;
 
+import edu.wpi.first.apriltag.AprilTagFields;
 import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.math.system.plant.DCMotor;
 import frc.robot.generated.TunerConstants;
@@ -146,6 +147,121 @@ public final class Constants {
             new Translation2d(TunerConstants.FrontRight.LocationX, TunerConstants.FrontRight.LocationY),
             new Translation2d(TunerConstants.BackLeft.LocationX, TunerConstants.BackLeft.LocationY),
             new Translation2d(TunerConstants.BackRight.LocationX, TunerConstants.BackRight.LocationY));
+    }
+
+/* -------------- AUTO-ALIGN CONSTANTS -------------- */
+
+    /**
+     * Settings for commands/AutoAlign.java and commands/DriveToPose.java: hold a paddle and the robot drives itself
+     * to a scoring/loading spot. Read AUTO-ALIGN-GUIDE.md for how it works.
+     * <p>
+     * Every spot is described by an AprilTag: "stand in front of tag N, this far out, this far to the side".
+     * The tag's position comes from the official field layout, so the code never has a hand-typed field coordinate.
+     * Next season: change {@link #kFieldLayout} and the tag IDs below, and the same code drives to the new game's spots.
+     */
+    public static final class AlignConstants {
+        /**
+         * Which field's AprilTag positions to use. MUST match the field map loaded on the Limelight's web page.
+         * 2026 has two versions (welded steel field and AndyMark field); ask the event which one they have.
+         */
+        public static final AprilTagFields kFieldLayout = AprilTagFields.k2026RebuiltWelded;
+
+        /**
+         * One spot the robot can drive to.
+         *
+         * @param name       Shown on the dashboard, e.g. "Hub front"
+         * @param tagId      The AprilTag the spot is in front of
+         * @param sideOffsetM Meters to slide sideways along the tag's face, as seen by someone standing in front of
+         *                   the tag LOOKING AT it: + = to their left, - = to their right. 0 = centered on the tag.
+         *                   (In 2025 this is how teams picked the left or right reef pole.)
+         */
+        public record FieldTarget(String name, int tagId, double sideOffsetM) {}
+
+        /**
+         * A group of spots for one button. The robot goes to whichever spot in the group is CLOSEST when the
+         * button is pressed. Spots are listed separately for each alliance because each alliance has its own hub/outpost.
+         */
+        public record TargetGroup(String name, FieldTarget[] blue, FieldTarget[] red) {}
+
+        /**
+         * HUB. Each hub face has its own tags. Only the face toward our driver station and the face toward the
+         * middle of the field can be reached (the bumps block the other two), so those two are listed.
+         * Blue hub: tag 26 = face toward the blue wall, tag 20 = face toward the middle. Red hub: tags 10 and 4.
+         */
+        public static final TargetGroup kHub = new TargetGroup("Hub",
+            new FieldTarget[] { new FieldTarget("Blue hub, wall side", 26, 0.0), new FieldTarget("Blue hub, middle side", 20, 0.0) },
+            new FieldTarget[] { new FieldTarget("Red hub, wall side", 10, 0.0), new FieldTarget("Red hub, middle side", 4, 0.0) });
+
+        /**
+         * OUTPOST (human player station in the corner of our driver station wall). It has two tags side by side,
+         * 0.432 m apart; the opening is centered between them, so we use the first tag and slide half the gap
+     * (0.216 m) to the right, toward the second tag.
+         * Blue: tags 29 + 30. Red: tags 13 + 14.
+         */
+        public static final TargetGroup kOutpost = new TargetGroup("Outpost",
+            new FieldTarget[] { new FieldTarget("Blue outpost", 29, -0.216) },
+            new FieldTarget[] { new FieldTarget("Red outpost", 13, -0.216) });
+
+        /** Half the robot's length WITH bumpers, meters (bumper edge to robot center). Hephaestus is 0.9 m square. */
+        public static final double kRobotHalfLengthM = 0.45;
+        /** Gap left between our bumper and the tag's face when we arrive, meters. 0 = bumper touching. */
+        public static final double kBumperGapM = 0.10;
+        /**
+         * Which side of the robot points AT the target. true = the front (intake) faces it, false = the back.
+         * Pick-and-place robots usually score off the front.
+         */
+        public static final boolean kFaceTargetWithFront = true;
+
+        /**
+         * The APPROACH spot is this much farther out than the final spot, straight back from the tag, in meters.
+         * PathPlanner drives to the approach spot (avoiding obstacles), then DriveToPose drives straight in.
+         * Bigger = straighter, safer final approach, but slower.
+         */
+        public static final double kApproachDistanceM = 0.75;
+        /** If we start closer than this to the final spot, skip PathPlanner and just drive straight in, meters... */
+        public static final double kSkipPathfindingDistanceM = 1.0;
+        /** ...and we're no more than this far off to the side of the straight-in lane, meters (else we might clip a corner) */
+        public static final double kMaxSidewaysToSkipPathfindingM = 0.3;
+
+        /** PathPlanner speed limits while pathfinding: m/s, m/s^2, deg/s, deg/s^2. Kept below full speed for safety. */
+        public static final double kPathfindMaxSpeed = 3.0;
+        public static final double kPathfindMaxAccel = 3.0;
+        public static final double kPathfindMaxTurnDegPerSec = 360;
+        public static final double kPathfindMaxTurnAccelDegPerSec2 = 540;
+
+        /** Final approach: speed = kP x distance left (m/s per meter of error), capped at the max below */
+        public static final double kFinalTranslationP = 3.0;
+        /** Final approach turning: turn rate = kP x heading error (rad/s per radian of error) */
+        public static final double kFinalRotationP = 4.0;
+        /** Final approach top speed (m/s), acceleration (m/s^2) and turn rate (rad/s) */
+        public static final double kFinalMaxSpeed = 1.5;
+        public static final double kFinalMaxAccel = 3.0;
+        public static final double kFinalMaxTurnRadPerSec = 3.0;
+        /** "Arrived" when within this many meters and degrees of the spot... */
+        public static final double kPositionToleranceM = 0.03;
+        public static final double kHeadingToleranceDeg = 2.0;
+        /** ...for this long, seconds (so we don't call it done while still swinging through the spot) */
+        public static final double kSettleSeconds = 0.15;
+        /** Give up if the final approach hasn't arrived after this long, seconds (something is probably in the way) */
+        public static final double kFinalApproachTimeoutSeconds = 3.0;
+
+        /**
+         * Only start if a Limelight saw a tag within this many seconds. If the robot doesn't know where it is,
+         * it would confidently drive to the wrong place. (Skipped in simulation, which has no camera.)
+         */
+        public static final double kMaxSecondsSinceTag = 2.0;
+        /** Moving either drive stick past this (0-1) cancels the align and gives the driver control back */
+        public static final double kDriverOverrideStick = 0.2;
+        /**
+         * STUCK check: if the wheels are told to go faster than kStallCommandedSpeed (m/s) but the robot moves slower
+         * than kStallActualSpeed (m/s) for kStallSeconds, we've hit something (robot, wall, game piece). Give up.
+         */
+        public static final double kStallCommandedSpeed = 0.5;
+        public static final double kStallActualSpeed = 0.1;
+        public static final double kStallSeconds = 0.5;
+        /** Controller rumble length when we arrive (one short buzz) or give up (a longer buzz), seconds */
+        public static final double kArrivedRumbleSeconds = 0.25;
+        public static final double kFailedRumbleSeconds = 0.75;
     }
 
 /* -------------- VISION CONSTANTS -------------- */

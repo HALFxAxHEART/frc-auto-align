@@ -38,7 +38,9 @@ src/main/java/frc/robot/
 │   ├── Vision.java                    Limelight → robot position
 │   └── ExampleRoller.java             Example mechanism to copy (not turned on)
 ├── commands/
-│   └── AutonContainer.java    Autonomous: PathPlanner setup, named commands, auto chooser
+│   ├── AutonContainer.java    Autonomous: PathPlanner setup, named commands, auto chooser
+│   ├── AutoAlign.java         Hold a paddle → drive to the hub/outpost (see AUTO-ALIGN-GUIDE.md)
+│   └── DriveToPose.java       Drives straight to an exact spot (used by AutoAlign)
 └── wrappers/                  Simple classes for sensors on DIO ports (limit switch, laser, LED)
 
 src/main/deploy/pathplanner/   Paths and autos drawn in the PathPlanner app

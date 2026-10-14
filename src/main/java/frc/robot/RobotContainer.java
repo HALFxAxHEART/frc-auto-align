@@ -15,12 +15,16 @@ import edu.wpi.first.math.MathUtil;
 import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.GenericHID.RumbleType;
 import edu.wpi.first.wpilibj.RobotController;
+import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.smartdashboard.SendableChooser;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.Command;
+import edu.wpi.first.wpilibj2.command.CommandScheduler;
 import edu.wpi.first.wpilibj2.command.button.CommandXboxController;
 import edu.wpi.first.wpilibj2.command.button.RobotModeTriggers;
+import frc.robot.Constants.AlignConstants;
 import frc.robot.Constants.OperatorConstants;
+import frc.robot.commands.AutoAlign;
 import frc.robot.commands.AutonContainer;
 import frc.robot.generated.TunerConstants;
 import frc.robot.subsystems.CommandSwerveDrivetrain;
@@ -61,7 +65,13 @@ public class RobotContainer {
     private final AutonContainer auton = new AutonContainer(this);
     private final SendableChooser<Command> autonChooser = auton.buildAutonChooser();
 
+    // --- AUTO-ALIGN (hold a paddle to drive to the hub / outpost) ---
+    private final AutoAlign autoAlign = new AutoAlign(
+        drivetrain, vision, this::onRedAlliance, this::driverIsDriving, this::rumbleDriver);
+
     private double m_brownoutRumble = 0.0;
+    /** Time until which the controller buzzes for auto-align feedback (see rumbleDriver) */
+    private double m_feedbackRumbleUntil = 0.0;
 
     // This is the Constructor. It runs once when the robot boots up.
     public RobotContainer() {
@@ -94,12 +104,34 @@ public class RobotContainer {
         // Start (menu): reset field-centric "forward" to the way the robot is facing right now
         driver.start().onTrue(drivetrain.runOnce(drivetrain::seedFieldCentric));
 
+        // AUTO-ALIGN: HOLD to drive to the spot, let go to stop. Moving a stick also stops it.
+        // The paddles under the controller aren't buttons of their own: the controller copies them onto other buttons.
+        // We set the paddles to copy the STICK CLICKS (see AUTO-ALIGN-GUIDE.md "Set up the paddles"), so:
+        //   left paddle  = left stick click  -> OUTPOST
+        //   right paddle = right stick click -> HUB
+        // Pressing a stick in by accident while driving is harmless: the stick is moving, which cancels it at once.
+        driver.leftStick().whileTrue(autoAlign.alignTo(AlignConstants.kOutpost));
+        driver.rightStick().whileTrue(autoAlign.alignTo(AlignConstants.kHub));
+        // Practice pathfind at boot so the first real press responds right away (runs while disabled too)
+        CommandScheduler.getInstance().schedule(autoAlign.warmup());
+
         drivetrain.registerTelemetry(logger::telemeterize);
     }
 
     // The FMS calls this right before Auto starts to ask what sequence to run.
     public Command getAutonomousCommand() {
         return autonChooser.getSelected();
+    }
+
+    /** @return Whether the driver is pushing either drive stick past kDriverOverrideStick (used to cancel auto-align) */
+    public boolean driverIsDriving() {
+        double threshold = AlignConstants.kDriverOverrideStick;
+        return Math.hypot(driver.getLeftX(), driver.getLeftY()) > threshold || Math.abs(driver.getRightX()) > threshold;
+    }
+
+    /** Buzzes the driver's controller at full strength for {@code seconds} (feedback that doesn't need eyes on a screen) */
+    public void rumbleDriver(double seconds) {
+        m_feedbackRumbleUntil = Math.max(m_feedbackRumbleUntil, Timer.getFPGATimestamp() + seconds);
     }
 
     /** Rumbles the driver controller harder the closer the battery gets to browning out. Call every loop. */
@@ -117,7 +149,9 @@ public class RobotContainer {
             }
         }
         m_brownoutRumble = Math.max(target, m_brownoutRumble - OperatorConstants.kRumbleDecayPerLoop);
-        driver.getHID().setRumble(RumbleType.kBothRumble, m_brownoutRumble);
+        // Auto-align feedback buzz wins over a weaker brownout rumble
+        double feedback = Timer.getFPGATimestamp() < m_feedbackRumbleUntil ? 1.0 : 0.0;
+        driver.getHID().setRumble(RumbleType.kBothRumble, Math.max(m_brownoutRumble, feedback));
         SmartDashboard.putNumber("Brownout Rumble", m_brownoutRumble);
     }
 }

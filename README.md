@@ -1,7 +1,9 @@
 # TorqueNados 5090 Robot Template — 2026
 
 Starting point for a 2026 robot: **CTRE swerve + PathPlanner + Limelight vision**, nothing game-specific.
-**New here? Read [STUDENT-GUIDE.md](STUDENT-GUIDE.md) first.** Names in this code must be professional and descriptive (guide section 8): judges, alumni and other teams read it. Every Java file also starts with a "WHAT THIS FILE IS" note.
+**New here? Read [STUDENT-GUIDE.md](STUDENT-GUIDE.md) first.**
+
+**Auto-align (hold a paddle to drive to the hub/outpost):** students read [AUTO-ALIGN-GUIDE.md](AUTO-ALIGN-GUIDE.md), mentors read [MENTOR-NOTES.md](MENTOR-NOTES.md). Names in this code must be professional and descriptive (guide section 8): judges, alumni and other teams read it. Every Java file also starts with a "WHAT THIS FILE IS" note.
 
 Built from the drivetrain and vision code of our 2026 robot, Hephaestus, with the game-specific mechanisms removed.
 
@@ -11,6 +13,7 @@ Built from the drivetrain and vision code of our 2026 robot, Hephaestus, with th
 | Swerve drive (Phoenix 6) | `generated/TunerConstants.java`, `subsystems/CommandSwerveDrivetrain.java` | Currently Hephaestus's drivetrain (SDS MK5n R3, CANivore "Jarvis", Pigeon ID 0). **For a new robot, regenerate TunerConstants with Tuner X.** |
 | Vision (Limelight) | `subsystems/Vision.java`, `LimelightHelpers.java` (v1.14, needs LLOS 2026+) | MegaTag2 while enabled (X/Y only, heading from the Pigeon). MegaTag1 with 2+ tags while disabled to fix the starting heading. Any number of cameras, listed in `Constants.VisionConstants.kCameras` with their mount position + pipeline (set in code). See STUDENT-GUIDE "Add another Limelight". |
 | Autos (PathPlanner) | `commands/AutonContainer.java`, `deploy/pathplanner/` | Example "Drive Forward" auto. Add autos to the chooser in `buildAutonChooser()`, register robot actions in `registerNamedCommands()`. |
+| Auto-align | `commands/AutoAlign.java`, `commands/DriveToPose.java`, `Constants.AlignConstants` | Hold a paddle: PathPlanner pathfinds around field elements (navgrid) to an approach spot, then a P controller drives straight in to a spot worked out from an AprilTag. Safety: hold-to-run, stick override, tag-seen check, stuck check, timeout. See [AUTO-ALIGN-GUIDE.md](AUTO-ALIGN-GUIDE.md). |
 | Logging | `RobotLog.java`, [LOGGING.md](LOGGING.md) | Everything to the USB stick: dashboard values, joysticks, commands, events, power, CAN, CTRE devices. LOGGING.md has what to log each season and why. |
 | Constants | `Constants.java` | Every number in one place: CAN buses, CAN ID map + numbering scheme, DIO ports, controller, drive speeds, PathPlanner, vision, example mechanism. |
 | Example mechanism | `subsystems/ExampleRoller.java` | A commented one-motor CTRE subsystem to copy for real mechanisms. Not turned on. |
@@ -21,6 +24,9 @@ Built from the drivetrain and vision code of our 2026 robot, Hephaestus, with th
 - **Right trigger** slow mode (40%)
 - **X** lock wheels in an X
 - **Start** reset field-centric forward to the way the robot faces
+- **Left paddle** (mapped to left stick click) hold: auto-align to the **outpost**
+- **Right paddle** (mapped to right stick click) hold: auto-align to the closest **hub** face
+- Moving a stick cancels auto-align. One short buzz = arrived, long buzz = gave up (`Align/State` says why)
 - Controller rumbles as the battery nears brownout (starts at 7.5 V)
 
 ## Dashboard
