@@ -105,13 +105,16 @@ public class RobotContainer {
         driver.start().onTrue(drivetrain.runOnce(drivetrain::seedFieldCentric));
 
         // AUTO-ALIGN: HOLD to drive to the spot, let go to stop. Moving a stick also stops it.
-        // The paddles under the controller aren't buttons of their own: the controller copies them onto other buttons.
-        // We set the paddles to copy the STICK CLICKS (see AUTO-ALIGN-GUIDE.md "Set up the paddles"), so:
-        //   left paddle  = left stick click  -> OUTPOST
-        //   right paddle = right stick click -> HUB
+        // The back buttons (paddles) on our 8BitDo controller aren't buttons of their own: the controller copies them
+        // onto other buttons. We set them to copy the STICK CLICKS (see AUTO-ALIGN-GUIDE.md "Set up the paddles"), so:
+        //   left back button  = left stick click  -> OUTPOST
+        //   right back button = right stick click -> HUB
+        // Each one goes to OUR alliance's spot: AutoAlign checks the Driver Station's alliance color on every press.
         // Pressing a stick in by accident while driving is harmless: the stick is moving, which cancels it at once.
         driver.leftStick().whileTrue(autoAlign.alignTo(AlignConstants.kOutpost));
         driver.rightStick().whileTrue(autoAlign.alignTo(AlignConstants.kHub));
+        // A: the depot, an example of a spot given by X/Y coordinates instead of an AprilTag
+        driver.a().whileTrue(autoAlign.alignTo(AlignConstants.kDepot));
         // Practice pathfind at boot so the first real press responds right away (runs while disabled too)
         CommandScheduler.getInstance().schedule(autoAlign.warmup());
 

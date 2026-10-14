@@ -10,6 +10,9 @@ The git history is split on purpose:
 2. **The auto-align commit** = *everything* that was added. Show students that diff (GitHub → the commit → "Files changed"):
    it's the whole feature in one readable change.
 
+**Before any session: Hephaestus's hood must be down.** Auto-align drives under the trench, the hood breaks if it's up
+under there, and this code doesn't control the hood.
+
 **Deploying this to Hephaestus replaces the competition code** (the `goonettes` branch of Hephaestus). Only the
 drivetrain and vision run. The intake, turret, hood and shooter get no commands, so they sit still. When you're done, redeploy
 Hephaestus's own code if the robot needs to shoot again.
@@ -18,7 +21,9 @@ Hephaestus's own code if the robot needs to shoot again.
 
 | Tested | How |
 |---|---|
-| Compiles, boots, drives to the hub (both faces) and the outpost on **both alliances** | Simulation with the real code, more than a dozen runs. All arrived within 2-3 cm and 0.1°. |
+| Compiles, boots, drives to the hub (both faces), the outpost and the depot (x/y spot) on **both alliances** | Simulation with the real code, dozens of runs. All arrived within 2-3 cm and 0.1°. |
+| Blue/red: same buttons go to our own alliance's spots | Simulation as Blue 1 and as Red 1 |
+| Under the trenches, never over the bumps; corners stay 7-17 cm from the trench frame | Simulation + a script that checks the robot's corners against the frame every 20 ms |
 | Picks the closer hub face | Simulation (start from the middle of the field → middle face; from the alliance zone → wall face) |
 | Close + lined up → skips pathfinding; close but beside the hub → still pathfinds | Simulation |
 | Final-approach timeout | Simulation with `kFinalTranslationP = 1` (challenge 5): gave up at 3 s as designed |
@@ -28,7 +33,9 @@ Hephaestus's own code if the robot needs to shoot again.
 |---|---|
 | Anything on the **real robot** | Follow the guide's section 10 step by step, slow speeds first |
 | Stick override, stuck check | Simulation can't push a stick mid-run or put a wall in the way. Test on the robot (guide step 6) |
-| Paddle mapping | Depends on your controller model; verify in the DS USB tab (buttons 9 and 10) |
+| Back-button mapping on the 8BitDo | Set up in 8BitDo Ultimate Software; verify in the DS USB tab (buttons 9 and 10) |
+| Trench clearance on the real robot | Sim margin is 7-17 cm. Real pose error eats into that: first trench runs at low speed, someone watching |
+| Depot coordinates | From 6328's field measurements, not our half field. Measure yours |
 | Pose accuracy on **your half field** | See the next section; this is the most likely thing to need work |
 
 ## The half field: the one thing that will bite you
@@ -78,16 +85,12 @@ Tips:
 2. **Back up to it.** `kFaceTargetWithFront = false`. The added rotation becomes 0° instead of 180°, so the robot
    faces the same way as the tag: at the outpost (tag faces 0°) the heading becomes 0° with the back to the wall. It changes
    *every* target. To do it per target, add a field to the `FieldTarget` record (good follow-up).
-3. **Tower button.** In `AlignConstants`:
-   ```java
-   public static final TargetGroup kTower = new TargetGroup("Tower",
-       new FieldTarget[] { new FieldTarget("Blue tower", 31, -0.216) },
-       new FieldTarget[] { new FieldTarget("Red tower", 15, -0.216) });
-   ```
-   and in `RobotContainer`: `driver.a().whileTrue(autoAlign.alignTo(AlignConstants.kTower));`.
-   **Catch:** the tower's base sticks out from the wall, so 0.10 m from the *tag* would drive into it. Look at the navgrid
-   (blocked out to ~1.8 m there) and measure the real tower. The right fix is a per-target "extra distance out" field
-   in `FieldTarget`, used in `AutoAlign.targetPose`. Good discussion of why defaults don't fit every target.
+3. **Tower button.** Two ways, both good discussions:
+   - `atTag` with tag 31 (blue) / 15 (red) and a side offset to the tower's center. **Catch:** the tower sticks out
+     from the wall (6328's measurements: about 1.1 m deep), so a 10 cm gap from the *tag* drives into it. The fix is a
+     per-target "extra distance out" field in `FieldTarget`, used in `AutoAlign.targetPose`.
+   - Or `atPosition` with the spot measured from the drawings, which sidesteps the problem.
+   Then `driver.b().whileTrue(autoAlign.alignTo(AlignConstants.kTower));`. Measure the real tower either way.
 4. **Reef-style.** Two groups with the same tags and `sideOffsetM` of `+0.3` (left) and `-0.3` (right), each on its own
    button. Side offset is "as seen looking at the tag", which is also the robot's left/right when it faces the tag front-first.
 5. **Feel the P.** kP = 1: speed = distance, so from 0.75 m the distance halves about every 0.7 s. Getting to 3 cm takes
@@ -101,7 +104,10 @@ Tips:
    (e.g. a Limelight neural detector pipeline), or a LIDAR. Turn each detection into a field position using our pose,
    make a small box around it, and pass the boxes to `Pathfinding.setDynamicObstacles(boxes, robotPosition)` every
    loop. PathPlanner re-plans around them. The final approach (DriveToPose) would still need its own check.
-8. **Skipping stage 1.** Already close and lined up = nothing to avoid. Pathfinding there would drive back out to the
+8. **Coordinates.** Middle of our wall is y = 4.035. 2.5 m out = x 2.5. The turret is on Hephaestus's back, so for
+   shooting the robot's back faces the hub: heading 180°. `FieldTarget.atPosition("Blue shot", 2.5, 4.035, 180)`.
+   `onRedSide`: x = 16.541 − 2.5 = 14.041, y = 4.034, heading 0°: in front of the red hub, back to it. ✓
+9. **Skipping stage 1.** Already close and lined up = nothing to avoid. Pathfinding there would drive back out to the
    approach pose and then come back in, wasting time, and our start might be inside a blocked square near the hub.
    It also checks we're *lined up*, because from beside the hub a straight line to the spot would clip the hub's corner.
 

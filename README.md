@@ -13,7 +13,7 @@ Built from the drivetrain and vision code of our 2026 robot, Hephaestus, with th
 | Swerve drive (Phoenix 6) | `generated/TunerConstants.java`, `subsystems/CommandSwerveDrivetrain.java` | Currently Hephaestus's drivetrain (SDS MK5n R3, CANivore "Jarvis", Pigeon ID 0). **For a new robot, regenerate TunerConstants with Tuner X.** |
 | Vision (Limelight) | `subsystems/Vision.java`, `LimelightHelpers.java` (v1.14, needs LLOS 2026+) | MegaTag2 while enabled (X/Y only, heading from the Pigeon). MegaTag1 with 2+ tags while disabled to fix the starting heading. Any number of cameras, listed in `Constants.VisionConstants.kCameras` with their mount position + pipeline (set in code). See STUDENT-GUIDE "Add another Limelight". |
 | Autos (PathPlanner) | `commands/AutonContainer.java`, `deploy/pathplanner/` | Example "Drive Forward" auto. Add autos to the chooser in `buildAutonChooser()`, register robot actions in `registerNamedCommands()`. |
-| Auto-align | `commands/AutoAlign.java`, `commands/DriveToPose.java`, `Constants.AlignConstants` | Hold a paddle: PathPlanner pathfinds around field elements (navgrid) to an approach spot, then a P controller drives straight in to a spot worked out from an AprilTag. Safety: hold-to-run, stick override, tag-seen check, stuck check, timeout. See [AUTO-ALIGN-GUIDE.md](AUTO-ALIGN-GUIDE.md). |
+| Auto-align | `commands/AutoAlign.java`, `commands/DriveToPose.java`, `Constants.AlignConstants` | Hold a button: turn to the final heading, PathPlanner pathfinds around field elements (navgrid: trenches open, bumps blocked) to an approach spot, then a P controller drives straight in. Spots are given by AprilTag or by x/y coordinates. Safety: hold-to-run, stick override, tag-seen check, stuck check, timeout. See [AUTO-ALIGN-GUIDE.md](AUTO-ALIGN-GUIDE.md). |
 | Logging | `RobotLog.java`, [LOGGING.md](LOGGING.md) | Everything to the USB stick: dashboard values, joysticks, commands, events, power, CAN, CTRE devices. LOGGING.md has what to log each season and why. |
 | Constants | `Constants.java` | Every number in one place: CAN buses, CAN ID map + numbering scheme, DIO ports, controller, drive speeds, PathPlanner, vision, example mechanism. |
 | Example mechanism | `subsystems/ExampleRoller.java` | A commented one-motor CTRE subsystem to copy for real mechanisms. Not turned on. |
@@ -24,8 +24,10 @@ Built from the drivetrain and vision code of our 2026 robot, Hephaestus, with th
 - **Right trigger** slow mode (40%)
 - **X** lock wheels in an X
 - **Start** reset field-centric forward to the way the robot faces
-- **Left paddle** (mapped to left stick click) hold: auto-align to the **outpost**
-- **Right paddle** (mapped to right stick click) hold: auto-align to the closest **hub** face
+- **Left back button** (8BitDo, mapped to left stick click) hold: auto-align to the **outpost**
+- **Right back button** (8BitDo, mapped to right stick click) hold: auto-align to the closest **hub** face
+- **A** hold: auto-align to the **depot** (example of a spot given by x/y coordinates)
+- Auto-align always goes to OUR alliance's spots (color from the Driver Station), under the trenches, never over the bumps
 - Moving a stick cancels auto-align. One short buzz = arrived, long buzz = gave up (`Align/State` says why)
 - Controller rumbles as the battery nears brownout (starts at 7.5 V)
 

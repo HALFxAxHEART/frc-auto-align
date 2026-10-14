@@ -41,6 +41,8 @@ import frc.robot.subsystems.Vision;
  *   <li><b>Pick</b> the closest spot in the group (e.g. the closer of the two reachable hub faces).</li>
  *   <li><b>Work out two poses</b> from that spot's AprilTag: the FINAL pose (bumper just short of the tag, facing it)
  *       and an APPROACH pose straight out from it.</li>
+ *   <li><b>Turn in place</b> to the final heading, so the robot keeps one heading for the whole trip (a robot that is
+ *       half-turned is wider corner to corner, and wouldn't fit under the trench).</li>
  *   <li><b>Stage 1, PathPlanner pathfinding</b> to the approach pose. PathPlanner plans a route around the field
  *       elements marked in deploy/pathplanner/navgrid.json and re-plans if needed. Skipped if we're already close.</li>
  *   <li><b>Stage 2, DriveToPose</b>: straight in to the final pose with a simple P controller, for accuracy.</li>
@@ -149,7 +151,7 @@ public class AutoAlign {
             }
         }
         if (target == null) {
-            return giveUp(group.name(), "none of its tag IDs are on the field layout " + kFieldLayout);
+            return giveUp(group.name(), "no usable spots (tag IDs not on the field layout " + kFieldLayout + "?)");
         }
 
         // 3. TWO POSES from the tag: final (just short of the tag) and approach (straight back from it)
@@ -158,7 +160,9 @@ public class AutoAlign {
         RobotLog.pose("Align/Goal", goal);
         RobotLog.pose("Align/Approach", approach);
         String targetName = target.name();
-        SmartDashboard.putString("Align/Target", targetName + " (tag " + target.tagId() + ")");
+        SmartDashboard.putString("Align/Target", targetName + (target.usesTag()
+            ? " (tag " + target.tagId() + ")"
+            : String.format(" (x %.2f, y %.2f)", goal.getX(), goal.getY())));
 
         // 4. STAGE 1: PathPlanner finds a way around obstacles to the approach pose. Skipped if we're already close
         // AND roughly lined up in front, where driving straight in can't clip a corner of the target.
@@ -166,11 +170,25 @@ public class AutoAlign {
         boolean alreadyClose = closestDistance < kSkipPathfindingDistanceM && isLinedUpInFront(robot, goal);
         Command pathfind = alreadyClose ? Commands.none() : AutoBuilder.pathfindToPose(approach, m_constraints, 0.0);
 
+        // 4a. BEFORE stage 1: turn in place to the final heading. PathPlanner turns the robot gradually over the whole
+        // path, so without this the robot could be half-turned (corners sticking out) while passing under a trench.
+        // Turned first, it keeps the same heading the whole way. Not needed if we're going straight in.
+        boolean needsTurn = Math.abs(robot.getRotation().minus(goal.getRotation()).getDegrees()) > kTurnFirstAboveDeg;
+        Command turnFirst = (alreadyClose || !needsTurn)
+            ? Commands.none()
+            : new DriveToPose(m_drivetrain, new Pose2d(robot.getTranslation(), goal.getRotation()));
+
         // 5. STAGE 2: straight in for accuracy
         Command finalApproach = new DriveToPose(m_drivetrain, goal);
 
         return Commands.sequence(
                 Commands.runOnce(() -> start(targetName, alreadyClose)),
+                turnFirst,
+                Commands.runOnce(() -> {
+                    if (!alreadyClose) {
+                        setState("Pathfinding");
+                    }
+                }),
                 pathfind,
                 Commands.runOnce(() -> {
                     m_finalApproachStartTime = Timer.getFPGATimestamp();
@@ -185,7 +203,10 @@ public class AutoAlign {
     /**
      * Where the robot should be to line up with a target.
      * <p>
-     * An AprilTag's pose points OUT of its face: its +X arrow sticks straight out toward the field. So "stand in front
+     * COORDINATE spot: the final pose is just the coordinates. The approach spot is extraOutM straight back from the
+     * way the robot will be facing (or straight ahead, if it backs into spots).
+     * <p>
+     * TAG spot: an AprilTag's pose points OUT of its face: its +X arrow sticks straight out toward the field. So "stand in front
      * of the tag" = start at the tag, go out along its +X by half our robot length + a gap (+ the approach distance),
      * slide sideways by the side offset, and turn around to face back at it.
      *
@@ -193,6 +214,10 @@ public class AutoAlign {
      * @return The pose in field coordinates, or empty if the tag isn't on this field
      */
     private Optional<Pose2d> targetPose(FieldTarget target, double extraOutM) {
+        if (!target.usesTag()) {
+            double backM = kFaceTargetWithFront ? -extraOutM : extraOutM;
+            return Optional.of(target.fieldPose().transformBy(new Transform2d(backM, 0.0, Rotation2d.kZero)));
+        }
         Optional<Pose3d> tag = m_field.getTagPose(target.tagId());
         if (tag.isEmpty()) {
             DriverStation.reportWarning("Auto-align: tag " + target.tagId() + " (" + target.name() + ") is not on " + kFieldLayout, false);
@@ -220,7 +245,7 @@ public class AutoAlign {
         m_stopReason = null;
         m_finalApproachStartTime = Double.NaN;
         m_stuck.calculate(false);
-        setState(alreadyClose ? "Final approach" : "Pathfinding");
+        setState(alreadyClose ? "Final approach" : "Turning to final heading");
         RobotLog.event("ALIGN start: " + targetName + (alreadyClose ? " (already close, straight in)" : " (pathfinding)"));
     }
 

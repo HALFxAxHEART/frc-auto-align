@@ -25,7 +25,8 @@ import frc.robot.subsystems.CommandSwerveDrivetrain;
  *   <li>How far and which way is the goal? That's the ERROR.</li>
  *   <li>Speed = kP x distance left, capped at a max speed. Far away = fast, close = slow, there = stop.
  *       That's a "P controller", the P in PID. Speed is also only allowed to grow a little each loop
- *       (an acceleration limit) so the wheels don't slip when it starts.</li>
+ *       (an acceleration limit) so the wheels don't slip when it starts, and never drops below a small minimum
+ *       until we've arrived (or friction would stop it a few cm short).</li>
  *   <li>Same idea for turning: turn rate = kP x how many degrees we're off.</li>
  * </ol>
  * It finishes once we've been inside the tolerance (a few cm and degrees) for a short moment.
@@ -76,6 +77,11 @@ public class DriveToPose extends Command {
         Translation2d error = m_goal.getTranslation().minus(pose.getTranslation());
         double distance = error.getNorm();
         double speed = Math.min(kFinalTranslationP * distance, kFinalMaxSpeed);
+        // Close to the goal, kP x distance gets so small the robot can't overcome friction and stops just short.
+        // So until we're inside the tolerance, always ask for at least a small minimum speed.
+        if (distance > kPositionToleranceM) {
+            speed = Math.max(speed, kFinalMinSpeed);
+        }
         speed = Math.min(speed, m_lastSpeed + kFinalMaxAccel * 0.020); // accel limit, 0.020 s per loop
         m_lastSpeed = speed;
         // Point that speed along the error arrow (divide by length to get a 1 m "direction" arrow first)
@@ -85,6 +91,10 @@ public class DriveToPose extends Command {
         // --- TURNING: error = how far our heading is from the goal heading, -180..180 deg ---
         double headingError = m_goal.getRotation().minus(pose.getRotation()).getRadians();
         double turnRate = MathUtil.clamp(kFinalRotationP * headingError, -kFinalMaxTurnRadPerSec, kFinalMaxTurnRadPerSec);
+        // Same minimum idea for turning (copysign = the minimum, with the same + or - direction as turnRate)
+        if (Math.abs(Units.radiansToDegrees(headingError)) > kHeadingToleranceDeg) {
+            turnRate = Math.copySign(Math.max(Math.abs(turnRate), kFinalMinTurnRadPerSec), turnRate);
+        }
 
         m_drivetrain.setControl(m_request.withVelocityX(vx).withVelocityY(vy).withRotationalRate(turnRate));
 

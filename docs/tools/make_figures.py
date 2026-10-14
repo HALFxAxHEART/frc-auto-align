@@ -1,7 +1,8 @@
 """Draws the pictures in AUTO-ALIGN-GUIDE.md (dark + light versions) into docs/images.
 
 Run from the repo root:  python docs/tools/make_figures.py   (needs: pip install matplotlib)
-sim-trace-blue.csv is the robot's position every 20 ms from simulation runs of the real AutoAlign code.
+sim-trace-blue.csv is the robot's position every 20 ms from simulation runs of the real AutoAlign code
+(blue alliance, runs 1-5: start A->hub, B->outpost, C->hub, D->depot, E->depot).
 """
 import csv, json, math, os
 import matplotlib
@@ -58,7 +59,14 @@ def field_base(ax, t, xlim, ylim, grid=True):
     # hub (blue) and outpost
     ax.add_patch(Rectangle((4.022, 3.431), 1.207, 1.207, fc=t["hub"], alpha=0.85, zorder=3))
     ax.text(4.625, 4.035, "HUB", color=t["bg"], ha="center", va="center", fontsize=9, weight="bold", zorder=4)
-    ax.add_patch(Rectangle((-0.05, 0.55), 0.12, 0.66, fc=t["outpost"], zorder=3))
+    ax.add_patch(Rectangle((-0.05, 0.262), 0.12, 0.808, fc=t["outpost"], zorder=3))
+    # bumps (drawn faint) and trench frames (the bars the robot drives under)
+    for y0, y1 in ((4.632, 6.486), (1.584, 3.438)):
+        ax.add_patch(Rectangle((4.022, y0), 1.128, y1 - y0, fc=t["hub"], alpha=0.3, zorder=3))
+    for y0, y1 in ((6.486, 6.791), (1.279, 1.584)):
+        ax.add_patch(Rectangle((4.022, y0), 1.194, y1 - y0, fc=t["wall"], zorder=3))
+    # depot (floor bin against the wall)
+    ax.add_patch(Rectangle((0.0, 5.43), 0.686, 1.067, fc="none", ec=t["outpost"], lw=1.2, ls=":", zorder=3))
     ax.plot([0, 0], [0, 8.07], color=t["wall"], lw=3, zorder=3)
     for tid in (20, 26, 29, 30):
         x, y, deg = TAGS[tid]
@@ -81,21 +89,27 @@ def fig_field(t, name):
     fig, ax = plt.subplots(figsize=(9.6, 5.4), dpi=150, facecolor=t["bg"])
     field_base(ax, t, (-0.3, 9.0), (-0.1, 8.17))
     runs = load_trace()
-    labels = {1: "start A → hub", 2: "start B → outpost", 3: "start C → hub", 4: "start D → outpost"}
-    for run, letter in zip((1, 2, 3, 4), "ABCD"):
+    for run, letter in zip((1, 2, 3, 4, 5), "ABCDE"):
         rows = runs[run]
         xs = [float(r["x"]) for r in rows]; ys = [float(r["y"]) for r in rows]
         ax.plot(xs, ys, color=t["path"], lw=2, zorder=6, alpha=0.95)
         r0 = rows[0]
-        robot(ax, float(r0["x"]), float(r0["y"]), float(r0["deg"]), t["robot"], t, alpha=0.8, label=letter)
-    for tid, side, col in ((26, 0, t["hub"]), (20, 0, t["hub"]), (29, -0.216, t["outpost"])):
-        gx, gy, gd = standing(tid, side)
+        # B and E start almost on top of each other: label them together
+        if letter != "E":
+            robot(ax, float(r0["x"]), float(r0["y"]), float(r0["deg"]), t["robot"], t, alpha=0.8,
+                  label="B, E" if letter == "B" else letter)
+    goals = [standing(26), standing(20), standing(29), (1.24, 5.96, 180)]
+    for gx, gy, gd in goals:
         robot(ax, gx, gy, gd, t["goal"], t, lw=2)
-        ax_, ay_, ad_ = standing(tid, side, APPROACH)
-        robot(ax, ax_, ay_, ad_, t["appr"], t, ls="--", lw=1.2, alpha=0.9)
-    ax.text(4.625, 2.45, "bumps + hub = blocked", color=t["sub"], ha="center", fontsize=8, zorder=9)
-    ax.text(0.15, 0.25, "OUTPOST", color=t["outpost"], fontsize=8, weight="bold")
-    ax.set_title("Simulation of the real code: 4 starts, blue alliance (half the field shown)", color=t["text"], fontsize=11)
+        a = math.radians(gd)
+        robot(ax, gx - APPROACH * math.cos(a), gy - APPROACH * math.sin(a), gd, t["appr"], t, ls="--", lw=1.2, alpha=0.9)
+    ax.text(4.625, 5.6, "bump", color=t["text"], ha="center", fontsize=7.5, zorder=9)
+    ax.text(4.625, 2.45, "bump", color=t["text"], ha="center", fontsize=7.5, zorder=9)
+    ax.text(5.35, 6.62, "trench", color=t["text"], fontsize=7.5, zorder=9)
+    ax.text(5.35, 1.4, "trench", color=t["text"], fontsize=7.5, zorder=9)
+    ax.text(0.15, 0.08, "OUTPOST (tag)", color=t["outpost"], fontsize=7.5, weight="bold")
+    ax.text(0.1, 6.6, "DEPOT (x/y)", color=t["outpost"], fontsize=7.5, weight="bold")
+    ax.set_title("Simulation of the real code: 5 starts, blue alliance (half the field shown)", color=t["text"], fontsize=11)
     from matplotlib.lines import Line2D
     leg = [Line2D([], [], color=t["path"], lw=2, label="path the robot drove"),
            Rectangle((0, 0), 1, 1, fc=t["grid"], ec=t["gridedge"], label="navgrid: blocked (obstacle)"),
@@ -109,8 +123,8 @@ def fig_two_stage(t, name):
     fig, ax = plt.subplots(figsize=(8, 5), dpi=150, facecolor=t["bg"])
     field_base(ax, t, (0.2, 5.6), (1.2, 5.3))
     rows = load_trace()[3]
-    st1 = [r for r in rows if r["state"].startswith("Pathfinding")]
-    st2 = [r for r in rows if not r["state"].startswith("Pathfinding")]
+    st1 = [r for r in rows if r["state"].startswith(("Pathfinding", "Turning"))]
+    st2 = [r for r in rows if not r["state"].startswith(("Pathfinding", "Turning"))]
     ax.plot([float(r["x"]) for r in st1], [float(r["y"]) for r in st1], color=t["path"], lw=2.5, zorder=6, label="stage 1: PathPlanner pathfinding")
     ax.plot([float(r["x"]) for r in st2], [float(r["y"]) for r in st2], color=t["final"], lw=2.5, zorder=6, label="stage 2: DriveToPose (straight in)")
     r0 = rows[0]
@@ -138,15 +152,17 @@ def fig_tag_frame(t, name):
         ax.text(x + 0.05, y, f" tag {tid}", color=t["tag"], va="center", fontsize=9, zorder=9)
     x, y, _ = TAGS[29]
     ax.add_patch(FancyArrowPatch((x, y), (x + 0.6, y), arrowstyle="-|>", mutation_scale=14, color="#ff6b6b", lw=2, zorder=9))
-    ax.text(x + 0.62, y - 0.02, "+X: straight OUT of the tag", color="#ff6b6b", va="center", fontsize=8.5)
+    ax.text(x + 1.15, y - 0.1, "+X (red arrow): straight OUT of the tag", color="#ff6b6b", va="center", fontsize=8)
     ax.add_patch(FancyArrowPatch((x, y), (x, y - 0.45), arrowstyle="-|>", mutation_scale=14, color="#4dabf7", lw=2, zorder=9))
     ax.text(x + 0.05, y - 0.5, "+Y: the tag's left\n(= YOUR right when you look at it)", color="#4dabf7", va="top", fontsize=8)
-    gx, gy, gd = standing(29, -0.216)
+    gx, gy, gd = standing(29, 0.0)
     robot(ax, gx, gy, gd, t["goal"], t, lw=2)
-    ax.annotate("", xy=(gx + 0.62, TAGS[29][1]), xytext=(gx + 0.62, gy), arrowprops=dict(arrowstyle="<->", color=t["text"]))
-    ax.text(gx + 0.68, (gy + TAGS[29][1]) / 2, "side offset 0.216 m\n(centered between tags 29 and 30)", color=t["text"], va="center", fontsize=8)
-    ax.text(gx, gy + 0.6, "final pose\n(facing the tag)", color=t["goal"], ha="center", fontsize=8.5)
-    ax.set_title("Every target is \"stand in front of tag N\": out along +X, sideways along Y", color=t["text"], fontsize=10.5)
+    sx, sy, sd = standing(29, -0.4)
+    robot(ax, sx, sy, sd, t["appr"], t, ls="--", lw=1.2)
+    ax.annotate("", xy=(sx + 0.62, gy), xytext=(sx + 0.62, sy), arrowprops=dict(arrowstyle="<->", color=t["text"]))
+    ax.text(sx + 0.68, (gy + sy) / 2, "sideOffsetM = -0.4\n(to your RIGHT as you look at the tag)", color=t["appr"], va="center", fontsize=8)
+    ax.text(gx + 0.68, gy - 0.36, "sideOffsetM = 0\n(centered on the tag)", color=t["goal"], va="center", fontsize=8)
+    ax.set_title("A tag spot: \"stand in front of tag N\": out along +X, sideways along Y", color=t["text"], fontsize=10.5)
     fig.subplots_adjust(left=0.1, right=0.97, top=0.9, bottom=0.12); fig.savefig(os.path.join(OUT, f"tag-frame-{name}.png"), facecolor=t["bg"]); plt.close(fig)
 
 def fig_p_controller(t, name):
@@ -159,7 +175,7 @@ def fig_p_controller(t, name):
     a1.set_xlabel("distance left to the final pose (m)", color=t["sub"], fontsize=8.5)
     a1.set_ylabel("speed we ask for (m/s)", color=t["sub"], fontsize=8.5)
     a1.set_title("The P controller rule", color=t["text"], fontsize=10.5)
-    rows = [r for r in load_trace()[3] if not r["state"].startswith("Pathfinding")]
+    rows = [r for r in load_trace()[3] if not r["state"].startswith(("Pathfinding", "Turning"))]
     gx, gy, _ = standing(26)
     t0 = float(rows[0]["t"])
     a2.plot([float(r["t"]) - t0 for r in rows], [math.hypot(float(r["x"]) - gx, float(r["y"]) - gy) for r in rows], color=t["path"], lw=2.5)

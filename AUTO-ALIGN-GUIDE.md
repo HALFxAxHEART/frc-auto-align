@@ -26,6 +26,10 @@ few tag numbers and it drives to the new game's spots.
 |---|---|
 | **Left paddle** (= left stick click) | The **outpost** |
 | **Right paddle** (= right stick click) | The closest reachable **hub** face |
+| **A** | The **depot** (an example of a spot given by X/Y coordinates instead of a tag) |
+
+**Blue or red is automatic.** When you press, the robot reads the alliance color from the Driver Station and only
+drives to *our* alliance's hub, outpost and depot. Same buttons, same code, either side of the field.
 
 Let go of the paddle or move a stick, and you're driving again instantly.
 **One short buzz** = arrived. **One long buzz** = it gave up (the dashboard `Align/State` says why).
@@ -35,7 +39,7 @@ Let go of the paddle or move a stick, and you're driving again instantly.
 ## 2. The big idea in three questions
 
 1. **Where am I?** The robot's *pose*: X, Y on the field and which way it's facing.
-2. **Where do I want to be?** The *target pose*, worked out from an AprilTag.
+2. **Where do I want to be?** The *target pose*, worked out from an AprilTag or given as X/Y coordinates.
 3. **How do I get there without hitting anything?** Two stages: PathPlanner for the long, twisty part, then a
    simple controller for the short, exact part.
 
@@ -46,8 +50,9 @@ The rest of this guide is one section per question.
   <img alt="Field map with four simulated auto-align paths going around the hub to the hub faces and the outpost" src="docs/images/field-paths-light.png">
 </picture>
 
-*The blue lines are the real code running in simulation from four starting spots (A-D). Notice the paths bend
-around the shaded squares: those are obstacles PathPlanner knows about.*
+*The blue lines are the real code running in simulation from five starting spots (A-E). Notice the paths bend
+around the shaded squares (obstacles PathPlanner knows about), and cross to the other side of the hub by going
+**under a trench**, never over a bump.*
 
 ---
 
@@ -70,11 +75,19 @@ The robot keeps track of its pose two ways, combined by the drivetrain's **pose 
 
 ---
 
-## 4. Where do I want to be? (target from an AprilTag)
+## 4. Where do I want to be? (a target from a tag, or from X/Y)
 
-Instead of typing in field coordinates by hand, every target is described as
-**"stand in front of tag N, this far out, this far to the side."** WPILib has the official position of every tag
-(`AprilTagFieldLayout`), so the code looks it up.
+There are two ways to describe a spot, and you can mix them:
+
+| Way | Use it when | Example in `Constants.AlignConstants` |
+|---|---|---|
+| **By AprilTag** `FieldTarget.atTag(...)` | There's a tag on the thing (hub, outpost, 2025 reef). Best choice: nothing to measure. | `FieldTarget.atTag("Blue outpost", 29, 0.0)` |
+| **By X/Y coordinates** `FieldTarget.atPosition(...)` | No tag on it (the depot, a favorite shooting spot, a spot on the floor). | `FieldTarget.atPosition("Blue depot", 1.24, 5.96, 180.0)` |
+
+### Way 1: from an AprilTag
+
+The target is described as **"stand in front of tag N, this far to the side."** WPILib has the official position
+of every tag (`AprilTagFieldLayout`), so the code looks it up.
 
 A tag's pose has its own little arrows:
 - **+X points straight OUT of the tag's face**, into the field.
@@ -88,7 +101,8 @@ A tag's pose has its own little arrows:
 So the final pose is:
 1. Start at the tag.
 2. Go **out** along its +X by *half our robot length + a small gap* (0.45 m + 0.10 m). That puts our bumper 10 cm from the tag.
-3. Slide **sideways** by the side offset (the outpost opening is between tags 29 and 30, so we slide 0.216 m).
+3. Slide **sideways** by the side offset. The outpost and hub use 0 (centered on the tag). In 2025, teams used
+   +/- offsets to pick the left or right reef pole next to one tag.
 4. **Turn around** 180° so our front faces the tag.
 
 In code (`AutoAlign.targetPose`) that's one line:
@@ -103,6 +117,30 @@ toward the middle, tag 20). When you press the button, the code picks whichever 
 blocked by the bumps. Each alliance has its own list, so on red the same button goes to the red hub (tags 10 and 4).
 This is how 2025 teams picked the nearest reef face.
 
+### Way 2: from X/Y coordinates
+
+The depot has no tag on it. So we give the spot directly, in field coordinates (section 3): where the robot's
+**center** should end up, and which way its **front** should face.
+```java
+FieldTarget.atPosition("Blue depot", 1.24, 5.96, 180.0)   // x m, y m, heading degrees
+```
+Where do the numbers come from? The field drawings: the depot is 0.686 m deep from the wall and centered at
+Y = 5.96 m. Robot center = 0.686 + 0.45 (half the robot) + 0.10 (gap) = **1.24 m** from the wall. Heading 180° = the
+front (intake) faces the blue wall, into the depot.
+
+**The red version** doesn't need measuring again. The 2026 field is the same for red, just turned 180° around the
+center, so `onRedSide(...)` works it out: x → 16.541 − x, y → 8.069 − y, heading + 180°.
+
+Coordinates are only as good as your measuring, and only as good as the robot's pose (section 3). A tag spot moves
+with the tag; a coordinate spot doesn't. Use tags when you can.
+
+### Blue or red? Groups and "closest"
+
+Every button drives to a **group** of spots, listed separately for blue and red. When you press the button, the code
+reads our alliance color from the Driver Station, takes that alliance's list, and picks the **closest** spot in it.
+The hub group has two (the face toward our wall, tag 26 on blue / 10 on red, and the face toward the middle,
+tag 20 / 4). The bumps block the other two faces. This is how 2025 teams picked the nearest reef face.
+
 **The approach pose** is the same thing, 0.75 m farther out (`kApproachDistanceM`). You'll see why next.
 
 ---
@@ -114,6 +152,14 @@ This is how 2025 teams picked the nearest reef face.
   <img alt="Zoomed-in diagram: stage 1 path to the approach pose, stage 2 straight line to the final pose in front of the hub" src="docs/images/two-stages-light.png">
 </picture>
 
+### First: turn to face the final direction
+
+Before moving, the robot turns in place until it faces the way it will face at the end. Then it keeps that heading the
+whole trip. Why? PathPlanner normally turns the robot *gradually* over the whole path. A half-turned square robot is
+wider corner to corner (0.9 m square → up to 1.27 m diagonally), and the trench opening is only 1.28 m wide. In
+simulation, a half-turned robot hit the trench frame. Turned first, it goes under square. (Skipped if it's already
+within 10° or close enough to drive straight in.)
+
 ### Stage 1: PathPlanner pathfinding (the long, twisty part)
 
 You already know PathPlanner for autos, where *you* draw the path. **Pathfinding** is PathPlanner drawing the path
@@ -123,12 +169,24 @@ AutoBuilder.pathfindToPose(approachPose, constraints, 0.0);   // 0.0 = arrive st
 ```
 
 How does it know what to avoid? The **navgrid**: `src/main/deploy/pathplanner/navgrid.json`. It chops the field into
-30 cm squares, and each square is either *open* or *blocked* (the shaded squares in the pictures). PathPlanner searches
+10 cm squares, and each square is either *open* or *blocked* (the shaded squares in the pictures). Each square marks
+where the robot's **center** may go. PathPlanner searches
 for the shortest route through open squares (with a version of the **A\*** "A-star" search algorithm), smooths it into a curve, and
 follows it. Blocked squares are drawn bigger than the real objects so our bumpers clear them.
 
-To change what's blocked: open the PathPlanner app on this project → the **Navigation Grid** editor → click squares
-→ save. Deploy, and the robot uses the new grid.
+**Our navgrid** is made by a script, `docs/tools/make_navgrid.py`, from PathPlanner's default 2026 grid plus exact
+field measurements around the hub:
+- **Trenches are open.** Our robot fits under them, so there's a lane through each. The center has to stay half a
+  robot + 5 cm away from the trench frame and the wall, which leaves a lane about 20 cm wide.
+- **Bumps are blocked.** The robot *can* drive over them, but auto-align shouldn't: it would bounce at full speed,
+  the wheels slip (so the pose gets worse), and on Hephaestus the intake has to be out over the bump, which this code
+  doesn't control. Going under the trench is smooth and just as short.
+- PathPlanner's default grid uses 30 cm squares. That's too coarse for the trench: a robot could be anywhere in a
+  30 cm square and still be "allowed", which in sim put it 4 cm into the trench frame. 10 cm squares fixed it.
+
+To change what's blocked: edit `make_navgrid.py` and run it (`python docs/tools/make_navgrid.py`), or use the
+PathPlanner app's **Navigation Grid** editor. (Running the script again replaces hand edits.) Deploy, and the robot
+uses the new grid.
 
 **Why not pathfind all the way to the final spot?** Look at the picture: the final pose is *inside* the shaded area
 around the hub (we want to be right up against it!). The pathfinder won't go into blocked squares. Also, a pathfinder
@@ -176,7 +234,7 @@ robot is at that moment. Without `defer`, it would be planned once when the robo
 
 | Obstacle | Handled? | How |
 |---|---|---|
-| **Field elements** (hub, bumps, walls, structures) | ✅ Yes | The navgrid. They never move, so we mark them once. |
+| **Field elements** (hub, bumps, trench frames, walls) | ✅ Yes | The navgrid. They never move, so we mark them once. Trenches are open (we fit), bumps are blocked (see section 5). |
 | **Game pieces** on the floor | ❌ No | The robot doesn't know they're there. Driver watches. |
 | **Other robots** | ❌ No | Same. PathPlanner *can* avoid moving obstacles (`Pathfinding.setDynamicObstacles`) if you tell it where they are, but that needs a camera that detects robots. That's a project for later (see Challenge 7). |
 
@@ -192,9 +250,16 @@ Because it can't see robots, **the driver is always the safety system**, backed 
 | **Timeout** | The final approach takes more than 3 s = something's in the way. Gives up + long buzz. |
 | **Startup check** | PathPlanner does a practice run at boot. Pressing during it gets a "try again" buzz instead of a stuck robot. |
 
-> **Bug we found while building this:** pressing the button while PathPlanner's boot-time practice run was still going
-> made the robot sit forever in "Pathfinding". We only found it by testing in simulation. That's why the startup check
-> exists. **Test in simulation first.**
+> **Bugs we found while building this, all in simulation, all before the robot ever moved:**
+> 1. Pressing the button while PathPlanner's boot-time practice run was still going made the robot sit forever in
+>    "Pathfinding". Fix: the startup check.
+> 2. Paths under the trench came within 1 cm of the frame, and a robot turning under it would have *hit* it (−18 cm).
+>    Fix: 10 cm navgrid squares with a 5 cm margin, and turning first.
+> 3. Turning in place stopped 2.05° short of a 2° tolerance and sat there forever: near the goal, kP × error was too
+>    small to move. Fix: a small minimum speed until it's inside the tolerance (real robots need this for friction too).
+>
+> **Test in simulation first.** We checked every sim run by computing how close the robot's corners got to the trench
+> frame (7-17 cm after the fixes).
 
 ---
 
@@ -206,11 +271,12 @@ Because it can't see robots, **the driver is always the safety system**, backed 
 | `commands/AutoAlign.java` | The plan: check → pick closest → work out poses → stage 1 + stage 2 → safety checks → buzz. |
 | `commands/DriveToPose.java` | Stage 2: the P controller that drives straight to an exact pose. |
 | `RobotContainer.java` | Binds the stick clicks (paddles), the stick-override check, and the controller buzz. |
-| `deploy/pathplanner/navgrid.json` | The obstacle map. Edit it in the PathPlanner app. |
+| `deploy/pathplanner/navgrid.json` | The obstacle map (made by `docs/tools/make_navgrid.py`). |
+| `docs/tools/make_navgrid.py` | Builds the navgrid: trenches open, bumps blocked, 10 cm squares. |
 
 **Dashboard (Elastic / AdvantageScope):**
-- `Align/State`: Idle, Pathfinding, Final approach, Arrived, Cancelled, Gave up / Can't align + *why*
-- `Align/Target`: which spot and tag it picked
+- `Align/State`: Idle, Turning to final heading, Pathfinding, Final approach, Arrived, Cancelled, Gave up / Can't align + *why*
+- `Align/Target`: which spot it picked (and its tag, or its x/y)
 - `Align/Distance left (m)` and `Align/Heading error (deg)`: graph these while tuning
 - AdvantageScope 2D field: add `DriveState/Pose` (robot), `Poses/Align/Goal`, `Poses/Align/Approach`, and
   `Poses/Auto path` (the path PathPlanner planned)
@@ -219,23 +285,28 @@ Because it can't see robots, **the driver is always the safety system**, backed 
 
 ## 8. Set up the paddles
 
-The paddles under an Xbox Elite (or similar) controller are **not buttons the robot can see**. The controller has
-the same 10 buttons as a normal Xbox controller. A paddle just **copies** one of them. So we tell the controller
-which buttons to copy:
+Our controller is the **8BitDo Ultimate Wired Controller for Xbox**. It has two back buttons (8BitDo calls them
+**P1** and **P2**). They are **not buttons the robot can see**: the controller has the same 10 buttons as a normal Xbox
+controller, and a back button just **copies** one of them. So we tell the controller which buttons to copy:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/paddles-dark.png">
   <img alt="Back of controller: left paddle copies left stick click for the outpost, right paddle copies right stick click for the hub" src="docs/images/paddles-light.png">
 </picture>
 
-**Xbox Elite Series 2:** on the driver station laptop, install the **Xbox Accessories** app (Microsoft Store) → plug
-in the controller → **Configure** → make a new profile (e.g. "FRC") → set the paddles you want:
-**left paddle → Left stick click**, **right paddle → Right stick click**. Set any other paddles to *Unmapped*.
-Save it to one of the controller's onboard slots, and on the controller press the profile button until that slot's light is on.
-The profile is stored *on the controller*, so it works on any laptop.
+**Setting up the 8BitDo:**
+1. On the driver station laptop, install **8BitDo Ultimate Software** (free, Microsoft Store). Plug in the controller.
+2. Open the button mapping screen and set: **left back button → LSB** (left stick button) and
+   **right back button → RSB** (right stick button). The app shows which back button is P1 and which is P2.
+3. Save it to the controller. The mapping lives in a **profile on the controller**, so it works on any laptop,
+   but only while that profile is switched on: the **Profile** button on the controller turns it on and off
+   (its light shows which). If the back buttons suddenly do nothing, someone switched the profile off.
 
-**Other paddle controllers** (PowerA, Turtle Beach, 8BitDo...): usually hold a *program* button, press the paddle,
-then press the button it should copy. Check its manual.
+Don't use the controller's quick **star-button swap** for this: that only swaps two front buttons, and 8BitDo says
+it resets when the controller turns off.
+
+**Other controllers with paddles** (Xbox Elite: the Xbox Accessories app; PowerA and others: a *program* button):
+same idea. Copy the paddles onto the stick clicks.
 
 **Check it worked:** Driver Station → **USB** tab → press each paddle and watch the button lights.
 Left stick click is button **9**, right stick click is button **10**. If a paddle lights up anything else, fix the mapping:
@@ -264,7 +335,9 @@ Simulation has no camera, so the "has it seen a tag" check is skipped there. Eve
 **Before you start:**
 - The Limelight's **field map** must be the 2026 one, and the same version as `kFieldLayout` in Constants (welded or AndyMark).
 - Our half-field elements must be at their **real field positions** relative to each other (see MENTOR-NOTES.md).
-- Driver Station **alliance color = the half we built** (the code picks *our* alliance's hub/outpost).
+- Driver Station **alliance color = the half we built** (the code picks *our* alliance's hub/outpost/depot).
+- **Hephaestus's hood must be DOWN.** This code only runs the drivetrain, so it can't stow the hood, and auto-align
+  drives under the trench. The hood breaks if it's up under the trench. Check it before every session.
 - A clear area, everyone off the field, and someone at the laptop ready to disable (**Enter** = disable, **Space** = emergency stop).
 
 **Step by step:**
@@ -290,7 +363,9 @@ Simulation has no camera, so the "has it seen a tag" check is skipped there. Eve
 | Creeps the last few cm very slowly | P too low | Raise `kFinalTranslationP` (try 4) |
 | Overshoots and wiggles back | P too high or too fast | Lower `kFinalTranslationP` or `kFinalMaxSpeed` |
 | Never says "Arrived" | Tolerance tighter than the robot can do | Loosen `kPositionToleranceM` / `kHeadingToleranceDeg` |
-| Path cuts too close to something | Navgrid doesn't block enough | Block more squares in the PathPlanner navgrid editor |
+| Path cuts too close to something | Navgrid doesn't block enough | Raise `MARGIN` in `make_navgrid.py` (or block squares in the PathPlanner app) |
+| Scrapes the trench | Pose is off, or the margin is too small | Check vision first, then raise `MARGIN` (the lane gets narrower) |
+| Depot spot is off | The coordinates, or the pose | Measure the real depot; change the numbers in `kBlueDepot` |
 | "Gave up: stuck" with nothing in the way | Stuck check too sensitive | Raise `kStallSeconds` |
 
 Change **one** thing at a time, and write down what you changed and what happened.
@@ -300,12 +375,15 @@ Change **one** thing at a time, and write down what you changed and what happene
 ## 12. Next year: point it at the new game
 
 1. `kFieldLayout` → the 2027 field (WPILib adds it in the 2027 release). Load the same map on the Limelight.
-2. Replace `kHub` / `kOutpost` with the new game's spots: tag IDs + side offsets. A scoring spot left and right of a
-   tag (like 2025's reef poles) = two `FieldTarget`s with side offsets of `+x` and `-x`.
-3. New navgrid: PathPlanner ships a default one for each new game. Check it, adjust it.
-4. `kFaceTargetWithFront`: which side of the new robot scores?
-5. `kRobotHalfLengthM`: the new robot's size with bumpers.
-6. Bind each group to a button in `RobotContainer`.
+2. Replace `kHub` / `kOutpost` / `kDepot` with the new game's spots: `atTag` (tag ID + side offset) where there's a
+   tag, `atPosition` (x, y, heading) where there isn't. A scoring spot left and right of a tag (like 2025's reef
+   poles) = two `atTag` spots with side offsets of `+x` and `-x`.
+3. New navgrid: start from PathPlanner's default grid for the new game, and update `make_navgrid.py` with the new
+   field elements (or edit in the PathPlanner app). Check what the robot can drive under or over.
+4. Check `onRedSide`: 2026's field is turned 180° for red. Some years (2024) it's a mirror image instead.
+5. `kFaceTargetWithFront`: which side of the new robot scores?
+6. `kRobotHalfLengthM`: the new robot's size with bumpers (and `HALF_ROBOT` in `make_navgrid.py`).
+7. Bind each group to a button in `RobotContainer`.
 
 That's it: AutoAlign and DriveToPose don't change.
 
@@ -317,12 +395,13 @@ Do these in simulation. Answers are in MENTOR-NOTES.md, but try first!
 
 1. **By hand:** tag 26 is at X = 4.022, Y = 4.035, facing 180°. Work out the final pose (X, Y, heading) the robot drives to. Check your answer on the AdvantageScope field.
 2. **Back up to it:** make the robot face the outpost with its *back*. Which one constant? What happens to the heading?
-3. **New button:** add a **tower** target (blue tags 31 + 32, red tags 15 + 16, centered between them like the outpost) on the **A** button.
+3. **New button:** add a **tower** target (blue tags 31 + 32, red tags 15 + 16) on the **B** button. Look up the tower's real size first. What goes wrong if you use the same 10 cm gap as the hub?
 4. **Reef-style:** make the hub button pick a spot 0.3 m to the *left* of center and a new button for 0.3 m to the *right*.
 5. **Feel the P:** set `kFinalTranslationP` to 1, then 10. Graph `Align/Distance left (m)`. What changes, and why?
 6. **Fake obstacle:** in the navgrid editor, block a 1 m square in the middle of the alliance zone. Run the sim from the other side. Does the path go around it?
 7. **Think:** how could the robot avoid *other robots*? What sensor would you need, and where would you put its output in the code?
-8. **Think:** why do we skip stage 1 when we're within 1 m and lined up? What could go wrong if we didn't? And why does it also check that we're *lined up*, not just close?
+8. **Coordinates:** add a spot by X/Y: our favorite shooting spot, 2.5 m straight out from the middle of our wall, facing the hub. What heading? Does `onRedSide` give the right red spot?
+9. **Think:** why do we skip stage 1 when we're within 1 m and lined up? What could go wrong if we didn't? And why does it also check that we're *lined up*, not just close?
 
 ---
 

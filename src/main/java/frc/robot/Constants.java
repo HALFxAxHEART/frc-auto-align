@@ -9,6 +9,8 @@ import com.pathplanner.lib.config.PIDConstants;
 import com.pathplanner.lib.config.RobotConfig;
 
 import edu.wpi.first.apriltag.AprilTagFields;
+import edu.wpi.first.math.geometry.Pose2d;
+import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.math.system.plant.DCMotor;
 import frc.robot.generated.TunerConstants;
@@ -155,9 +157,14 @@ public final class Constants {
      * Settings for commands/AutoAlign.java and commands/DriveToPose.java: hold a paddle and the robot drives itself
      * to a scoring/loading spot. Read AUTO-ALIGN-GUIDE.md for how it works.
      * <p>
-     * Every spot is described by an AprilTag: "stand in front of tag N, this far out, this far to the side".
-     * The tag's position comes from the official field layout, so the code never has a hand-typed field coordinate.
-     * Next season: change {@link #kFieldLayout} and the tag IDs below, and the same code drives to the new game's spots.
+     * A spot can be described two ways:
+     * <ul>
+     *   <li><b>By AprilTag</b> ({@link FieldTarget#atTag}): "stand in front of tag N, this far to the side". The tag's
+     *       position comes from the official field layout, so nothing is hand-measured. Best when there's a tag on it.</li>
+     *   <li><b>By X/Y coordinates</b> ({@link FieldTarget#atPosition}): "put the robot's center here, facing this way".
+     *       For spots with no tag on them (like the depot), measured from the field drawings.</li>
+     * </ul>
+     * Next season: change {@link #kFieldLayout} and the spots below, and the same code drives to the new game's spots.
      */
     public static final class AlignConstants {
         /**
@@ -166,20 +173,62 @@ public final class Constants {
          */
         public static final AprilTagFields kFieldLayout = AprilTagFields.k2026RebuiltWelded;
 
+        /** Field size, meters (from the 2026 AprilTag layout). Used to work out the red version of a coordinate spot. */
+        public static final double kFieldLengthM = 16.541;
+        public static final double kFieldWidthM = 8.069;
+
         /**
-         * One spot the robot can drive to.
+         * One spot the robot can drive to. Make one with {@link #atTag} or {@link #atPosition}, not the constructor.
          *
-         * @param name       Shown on the dashboard, e.g. "Hub front"
-         * @param tagId      The AprilTag the spot is in front of
-         * @param sideOffsetM Meters to slide sideways along the tag's face, as seen by someone standing in front of
-         *                   the tag LOOKING AT it: + = to their left, - = to their right. 0 = centered on the tag.
-         *                   (In 2025 this is how teams picked the left or right reef pole.)
+         * @param name        Shown on the dashboard, e.g. "Blue hub, wall side"
+         * @param tagId       atTag: the AprilTag the spot is in front of. atPosition: -1 (not used).
+         * @param sideOffsetM atTag: meters to slide sideways along the tag's face (see {@link #atTag}).
+         * @param fieldPose   atPosition: where the robot's center ends up and which way it faces. atTag: null.
          */
-        public record FieldTarget(String name, int tagId, double sideOffsetM) {}
+        public record FieldTarget(String name, int tagId, double sideOffsetM, Pose2d fieldPose) {
+            /**
+             * A spot in front of an AprilTag: the robot's bumper ends up kBumperGapM from the tag, facing it
+             * (front or back, see kFaceTargetWithFront).
+             *
+             * @param sideOffsetM Meters to slide sideways along the tag's face, as seen by someone standing in front of
+             *                    the tag LOOKING AT it: + = to their left, - = to their right. 0 = centered on the tag.
+             *                    (In 2025 this is how teams picked the left or right reef pole.)
+             */
+            public static FieldTarget atTag(String name, int tagId, double sideOffsetM) {
+                return new FieldTarget(name, tagId, sideOffsetM, null);
+            }
+
+            /**
+             * A spot given as field coordinates (blue origin, meters; see STUDENT-GUIDE section 4).
+             *
+             * @param xM         Where the robot's CENTER ends up: meters from the blue wall
+             * @param yM         Meters from the right-hand side wall (as seen from the blue driver station)
+             * @param headingDeg Which way the robot's FRONT points: 0 = toward the red wall, 90 = left, 180 = toward blue
+             */
+            public static FieldTarget atPosition(String name, double xM, double yM, double headingDeg) {
+                return new FieldTarget(name, -1, 0.0, new Pose2d(xM, yM, Rotation2d.fromDegrees(headingDeg)));
+            }
+
+            /** @return true for a spot in front of an AprilTag, false for a spot given as coordinates */
+            public boolean usesTag() {
+                return fieldPose == null;
+            }
+
+            /**
+             * The same coordinate spot on the RED side. The 2026 field is the same for red, just turned 180 degrees
+             * around the center, so X and Y are measured from the other corner and the heading turns around.
+             * (If a future field is a mirror image instead, like 2024, this needs changing.)
+             */
+            public FieldTarget onRedSide(String redName) {
+                return atPosition(redName, kFieldLengthM - fieldPose.getX(), kFieldWidthM - fieldPose.getY(),
+                    fieldPose.getRotation().getDegrees() + 180.0);
+            }
+        }
 
         /**
          * A group of spots for one button. The robot goes to whichever spot in the group is CLOSEST when the
-         * button is pressed. Spots are listed separately for each alliance because each alliance has its own hub/outpost.
+         * button is pressed. Spots are listed separately for each alliance because each alliance has its own hub/outpost:
+         * the robot checks the Driver Station's alliance color when the button is pressed and only uses that list.
          */
         public record TargetGroup(String name, FieldTarget[] blue, FieldTarget[] red) {}
 
@@ -189,18 +238,30 @@ public final class Constants {
          * Blue hub: tag 26 = face toward the blue wall, tag 20 = face toward the middle. Red hub: tags 10 and 4.
          */
         public static final TargetGroup kHub = new TargetGroup("Hub",
-            new FieldTarget[] { new FieldTarget("Blue hub, wall side", 26, 0.0), new FieldTarget("Blue hub, middle side", 20, 0.0) },
-            new FieldTarget[] { new FieldTarget("Red hub, wall side", 10, 0.0), new FieldTarget("Red hub, middle side", 4, 0.0) });
+            new FieldTarget[] { FieldTarget.atTag("Blue hub, wall side", 26, 0.0), FieldTarget.atTag("Blue hub, middle side", 20, 0.0) },
+            new FieldTarget[] { FieldTarget.atTag("Red hub, wall side", 10, 0.0), FieldTarget.atTag("Red hub, middle side", 4, 0.0) });
 
         /**
-         * OUTPOST (human player station in the corner of our driver station wall). It has two tags side by side,
-         * 0.432 m apart; the opening is centered between them, so we use the first tag and slide half the gap
-     * (0.216 m) to the right, toward the second tag.
-         * Blue: tags 29 + 30. Red: tags 13 + 14.
+         * OUTPOST (human player station in the corner of our driver station wall). The opening is centered on its
+         * first tag (team 6328's field measurements); the second tag (30 blue / 14 red) is just beside it.
+         * Blue: tag 29. Red: tag 13.
          */
         public static final TargetGroup kOutpost = new TargetGroup("Outpost",
-            new FieldTarget[] { new FieldTarget("Blue outpost", 29, -0.216) },
-            new FieldTarget[] { new FieldTarget("Red outpost", 13, -0.216) });
+            new FieldTarget[] { FieldTarget.atTag("Blue outpost", 29, 0.0) },
+            new FieldTarget[] { FieldTarget.atTag("Red outpost", 13, 0.0) });
+
+        /** Blue depot spot by coordinates (no tag on the depot): see kDepot */
+        private static final FieldTarget kBlueDepot = FieldTarget.atPosition("Blue depot", 1.24, 5.96, 180.0);
+
+        /**
+         * DEPOT (the floor bin of game pieces against our wall), as an example of a spot given by X/Y COORDINATES
+         * because it has no AprilTag. From the field drawings (6328's FieldConstants): the depot is 0.686 m deep from
+         * the wall and centered at Y = 5.96 m. Robot center = 0.686 + 0.45 (half robot) + 0.10 (gap) = 1.24 m out,
+         * facing the wall (180 deg) so the intake points into the depot. Red is worked out by onRedSide().
+         */
+        public static final TargetGroup kDepot = new TargetGroup("Depot",
+            new FieldTarget[] { kBlueDepot },
+            new FieldTarget[] { kBlueDepot.onRedSide("Red depot") });
 
         /** Half the robot's length WITH bumpers, meters (bumper edge to robot center). Hephaestus is 0.9 m square. */
         public static final double kRobotHalfLengthM = 0.45;
@@ -213,7 +274,8 @@ public final class Constants {
         public static final boolean kFaceTargetWithFront = true;
 
         /**
-         * The APPROACH spot is this much farther out than the final spot, straight back from the tag, in meters.
+         * The APPROACH spot is this much farther out than the final spot, straight back from the target, in meters.
+         * (For a coordinate spot: straight back from the way the robot will face, or ahead of it if it backs in.)
          * PathPlanner drives to the approach spot (avoiding obstacles), then DriveToPose drives straight in.
          * Bigger = straighter, safer final approach, but slower.
          */
@@ -222,6 +284,12 @@ public final class Constants {
         public static final double kSkipPathfindingDistanceM = 1.0;
         /** ...and we're no more than this far off to the side of the straight-in lane, meters (else we might clip a corner) */
         public static final double kMaxSidewaysToSkipPathfindingM = 0.3;
+
+        /**
+         * Before pathfinding, turn in place to the final heading if we're more than this many degrees off. Then the
+         * robot keeps one heading the whole way, square to the trench, instead of being half-turned under it.
+         */
+        public static final double kTurnFirstAboveDeg = 10.0;
 
         /** PathPlanner speed limits while pathfinding: m/s, m/s^2, deg/s, deg/s^2. Kept below full speed for safety. */
         public static final double kPathfindMaxSpeed = 3.0;
@@ -237,6 +305,9 @@ public final class Constants {
         public static final double kFinalMaxSpeed = 1.5;
         public static final double kFinalMaxAccel = 3.0;
         public static final double kFinalMaxTurnRadPerSec = 3.0;
+        /** Final approach minimum speed (m/s) and turn rate (rad/s) until in tolerance, so friction can't stop it just short */
+        public static final double kFinalMinSpeed = 0.05;
+        public static final double kFinalMinTurnRadPerSec = 0.3;
         /** "Arrived" when within this many meters and degrees of the spot... */
         public static final double kPositionToleranceM = 0.03;
         public static final double kHeadingToleranceDeg = 2.0;
